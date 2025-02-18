@@ -69,13 +69,13 @@ namespace sh {
 		{
 			state::alphabet.clear();
 			for (int i = 0; i < (N - 1); i++) {
-				const ChannelT jsym = N - 1 - i;
+				const ChannelT jsym = static_cast<ChannelT>(N - 1 - i);
 				for (int j = i + 1; j < N; j++) {
-					const ChannelT isym = N - 1 - j;
+					const ChannelT isym = static_cast<ChannelT>(N - 1 - j);
 
 					if (!use_symmetry || (isym > i) || ((isym == i) && (jsym >= j)))
 					{
-						state::alphabet.push_back(Pair_t(i, j));
+						state::alphabet.push_back(Pair_t(static_cast<ChannelT>(i), static_cast<ChannelT>(j)));
 					}
 				}
 			}
@@ -260,15 +260,15 @@ namespace sh {
 			cg = cgbest;
 			if (state::Verbosity > 2)
 			{
-				std::cout << "Greedy: adding pair (" << best.lo << "," << best.hi << ")" << std::endl;
+				std::cout << "Greedy: adding pair (" << static_cast<int>(best.lo) << "," << static_cast<int>(best.hi) << "); prefix_size = " << prefix.size() << std::endl;
 			}
 			prefix.push_back(best);
 			if (use_symmetry && ((best.lo + best.hi) != (N - 1)))
 			{
-				Pair_t p = Pair_t(N - 1 - best.hi, N - 1 - best.lo);
+				const Pair_t p = Pair_t(N - 1 - best.hi, N - 1 - best.lo);
 				if (state::Verbosity > 2)
 				{
-					std::cout << "Greedy: adding symmetric pair (" << p.lo << "," << p.hi << ")" << std::endl;
+					std::cout << "Greedy: adding symmetric pair (" << static_cast<int>(p.lo) << "," << static_cast<int>(p.hi) << ")" << std::endl;
 				}
 				prefix.push_back(std::move(p));
 			}
