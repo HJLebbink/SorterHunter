@@ -42,7 +42,7 @@
 #include <ctime>
 #include <array>
 #include <chrono>
-
+#include <unordered_set>
 
 #include "htypes.h"
 #include "hutils.h"
@@ -51,6 +51,9 @@
 #include "linear_to_layers.h"
 #include "State.h"
 
+#include "sn_to_latex.h"
+#include "swap_data.h"
+#include "ktop.h"
 
 namespace sh {
 
@@ -116,7 +119,7 @@ namespace sh {
 
 				if (!state::use_symmetry || (isym > i) || ((isym == i) && (jsym >= j)))
 				{
-					state::alphabet.push_back(Pair_t(i, j));
+					state::alphabet.push_back(Pair_t(static_cast<ChannelT>(i), static_cast<ChannelT>(j)));
 				}
 			}
 		}
@@ -270,7 +273,6 @@ namespace sh {
 		return true;
 	}
 
-
 	/**
 	 * Filter a network to obtain only the pairs that are in range 0..ninputs-1 and properly sorted
 	 * @param nw input network
@@ -301,10 +303,10 @@ namespace sh {
 	void fillprefixGreedyA(INOUT Network_t& prefix, int npairs)
 	{
 		prefix.clear();
-		SortWord_t sizetmp = createGreedyPrefix<N>(npairs, state::use_symmetry, prefix, state::mtRand);
+		const SortWord_t sizetmp = createGreedyPrefix<N>(npairs, state::use_symmetry, prefix, state::mtRand);
 		if (state::Verbosity > 1)
 		{
-			std::cout << "Greedy prefix size " << prefix.size() << ", span " << sizetmp << std::endl;
+			//std::cout << "Greedy prefix size " << prefix.size() << ", span " << sizetmp << std::endl;
 		}
 	}
 
@@ -320,7 +322,7 @@ namespace sh {
 		const SortWord_t sizetmp = createGreedyPrefix<N>(npairs + static_cast<int>(prefix.size()), state::use_symmetry, prefix, state::mtRand);
 		if (state::Verbosity > 2)
 		{
-			std::cout << "Hybrid prefix size " << prefix.size() << ", span " << sizetmp << std::endl;
+			//std::cout << "Hybrid prefix size " << prefix.size() << ", span " << sizetmp << std::endl;
 		}
 	}
 
@@ -333,50 +335,43 @@ namespace sh {
 	[[nodiscard]] inline u32 attemptMutation(INOUT Network_t& newpairs)
 	{
 		u32 applied = 0; // Nothing
-		const u32 mtype = 1 + RANDELEM(state::mutationSelector);
-
-		const int new_pairs_size = static_cast<int>(newpairs.size());
+		u32 mtype = 1 + RANDELEM(state::mutationSelector);
 
 		switch (mtype)
 		{
 		case 1:
-			if (new_pairs_size > 0)   // Removal of random pair from list
+			if (newpairs.size() > 0)   // Removal of random pair from list
 			{
-				const int a = static_cast<int>(RANDIDX(newpairs));
+				u32 a = static_cast<u32>(RANDIDX(newpairs));
 				newpairs.erase(newpairs.begin() + a);
 				applied = mtype;
 			}
 			break;
 		case 2:
-			if (new_pairs_size > 1) // Swap two pairs at random positions in list
+			if (newpairs.size() > 1) // Swap two pairs at random positions in list
 			{
-				int a = static_cast<int>(RANDIDX(newpairs));
-				int b = static_cast<int>(RANDIDX(newpairs));
-				if (a > b) {
-					const auto z = a;
-					a = b;
-					b = z;
-				}
+				u32 a = static_cast<u32>(RANDIDX(newpairs));
+				u32 b = static_cast<u32>(RANDIDX(newpairs));
+				if (a > b) { u32 z = a; a = b; b = z; }
 				if (newpairs[a] != newpairs[b])
 				{
 					bool dependent = false;
-					const ChannelT alo = newpairs[a].lo;
-					const ChannelT ahi = newpairs[a].hi;
-					const ChannelT blo = newpairs[b].lo;
-					const ChannelT bhi = newpairs[b].hi;
+					u8 alo = newpairs[a].lo;
+					u8 ahi = newpairs[a].hi;
+					u8 blo = newpairs[b].lo;
+					u8 bhi = newpairs[b].hi;
 
 					// Pairs should either intersect, or another pair should exist between them that uses
 					// one of the same 4 inputs. Otherwise, comparisons can be executed in parallel and
 					// swapping them has no effect. 
-					if ((blo == alo) || (blo == ahi) || (bhi == alo) || (bhi == ahi)) {
+					if ((blo == alo) || (blo == ahi) || (bhi == alo) || (bhi == ahi))
 						dependent = true;
-					}
 					else
 					{
-						for (int k = a + 1; k < b; k++)
+						for (u32 k = a + 1; k < b; k++)
 						{
-							const ChannelT clo = newpairs[k].lo;
-							const ChannelT chi = newpairs[k].hi;
+							u8 clo = newpairs[k].lo;
+							u8 chi = newpairs[k].hi;
 							if ((clo == alo) || (clo == ahi) || (chi == alo) || (chi == ahi) ||
 								(clo == blo) || (clo == bhi) || (chi == blo) || (chi == bhi))
 							{
@@ -389,17 +384,17 @@ namespace sh {
 					{
 						Pair_t z = newpairs[a];
 						newpairs[a] = newpairs[b];
-						newpairs[b] = std::move(z);
+						newpairs[b] = z;
 						applied = mtype;
 					}
 				}
 			}
 			break;
 		case 3:
-			if (new_pairs_size > 0)  // Replace a pair at a random position with another random pair
+			if (newpairs.size() > 0)  // Replace a pair at a random position with another random pair
 			{
-				const int a = static_cast<int>(RANDIDX(newpairs));
-				const Pair_t p = RANDELEM(state::alphabet);
+				u32 a = static_cast<u32>(RANDIDX(newpairs));
+				Pair_t p = RANDELEM(state::alphabet);
 				if (newpairs[a] != p)
 				{
 					newpairs[a] = p;
@@ -408,43 +403,43 @@ namespace sh {
 			}
 			break;
 		case 4:
-			if (new_pairs_size > 1) // Cross two pairs at random positions in list
+			if (newpairs.size() > 1) // Cross two pairs at random positions in list
 			{
-				const int a = static_cast<int>(RANDIDX(newpairs));
-				const int b = static_cast<int>(RANDIDX(newpairs));
-				const ChannelT alo = newpairs[a].lo;
-				const ChannelT ahi = newpairs[a].hi;
-				const ChannelT blo = newpairs[b].lo;
-				const ChannelT bhi = newpairs[b].hi;
+				u32 a = static_cast<u32>(RANDIDX(newpairs));
+				u32 b = static_cast<u32>(RANDIDX(newpairs));
+				u32 alo = static_cast<u32>(newpairs[a].lo);
+				u32 ahi = static_cast<u32>(newpairs[a].hi);
+				u32 blo = static_cast<u32>(newpairs[b].lo);
+				u32 bhi = static_cast<u32>(newpairs[b].hi);
 
 				if ((alo != blo) && (alo != bhi) && (ahi != blo) && (ahi != bhi))
 				{
-					const int r2 = state::mtRand() % 2;
-					const ChannelT x = r2 ? bhi : blo;
-					const ChannelT y = r2 ? blo : bhi;
-					newpairs[a].lo = std::min(alo, x);
-					newpairs[a].hi = std::max(alo, x);
-					newpairs[b].lo = std::min(ahi, y);
-					newpairs[b].hi = std::max(ahi, y);
+					u32 r2 = state::mtRand() % 2;
+					u32 x = r2 ? bhi : blo;
+					u32 y = r2 ? blo : bhi;
+					newpairs[a].lo = static_cast<ChannelT>(std::min(alo, x));
+					newpairs[a].hi = static_cast<ChannelT>(std::max(alo, x));
+					newpairs[b].lo = static_cast<ChannelT>(std::min(ahi, y));
+					newpairs[b].hi = static_cast<ChannelT>(std::max(ahi, y));
 					applied = mtype;
 				}
 			}
 			break;
 		case 5:
-			if (new_pairs_size > 1) // Swap neighbouring intersecting pairs - special case of type r=2.
+			if (newpairs.size() > 1) // Swap neighbouring intersecting pairs - special case of type r=2.
 			{
-				const int a = static_cast<int>(RANDIDX(newpairs));
-				const ChannelT alo = newpairs[a].lo;
-				const ChannelT ahi = newpairs[a].hi;
-				for (int b = a + 1; b < new_pairs_size; b++)
+				u32 a = static_cast<u32>(RANDIDX(newpairs));
+				u8 alo = newpairs[a].lo;
+				u8 ahi = newpairs[a].hi;
+				for (u32 b = a + 1; b < newpairs.size(); b++)
 				{
-					const ChannelT blo = newpairs[b].lo;
-					const ChannelT bhi = newpairs[b].hi;
+					u8 blo = newpairs[b].lo;
+					u8 bhi = newpairs[b].hi;
 					if ((blo == alo) || (blo == ahi) || (bhi == alo) || (bhi == ahi))
 					{
 						if (newpairs[a] != newpairs[b])
 						{
-							const Pair_t z = newpairs[a];
+							Pair_t z = newpairs[a];
 							newpairs[a] = newpairs[b];
 							newpairs[b] = z;
 							applied = mtype;
@@ -455,10 +450,10 @@ namespace sh {
 			}
 			break;
 		case 6:
-			if (new_pairs_size > 0) // Change one half of a pair - special case of type r=3.
+			if (newpairs.size() > 0) // Change one half of a pair - special case of type r=3.
 			{
-				const int a = static_cast<int>(RANDIDX(newpairs));
-				const Pair_t p = newpairs[a];
+				u32 a = static_cast<u32>(RANDIDX(newpairs));
+				Pair_t p = newpairs[a];
 				Pair_t q(0, 0);
 				do {
 					q = RANDELEM(state::alphabet);
@@ -494,26 +489,33 @@ namespace sh {
 				std::cout << " {'N':" << N << ",'L':" << nw.size() << ",'D':" << depth << ",'sw':'" << VERSION << "','ESC':" << state::EscapeRate << ",'Prefix':" << prefix.size() << ",'Postfix':" << state::postfix.size() << ",'nw':" << std::endl;
 				//printnw(nw);
 
-				constexpr bool print_layers = true;
+				constexpr bool print_layers = false;
 
 				if (print_layers) {					
 					constexpr bool remove_prefix = false;
 					constexpr bool remove_postfix = true;
 
 					if (remove_prefix) {
-						std::cout << "prefix:" << std::endl << tools::layers_to_string_mojo(tools::linear_to_layers(prefix)) << std::endl;
-						std::cout << "layers:" << std::endl << tools::layers_to_string_mojo(tools::linear_to_layers(nw)) << std::endl;
+						//std::cout << "prefix:" << std::endl << tools::layers_to_string_mojo(tools::linear_to_layers(prefix)) << std::endl;
+						//std::cout << "layers:" << std::endl << tools::layers_to_string_mojo(tools::linear_to_layers(nw)) << std::endl;
 						const auto layers = tools::linear_to_layers(tools::remove_prefix(nw, prefix));
 						std::cout << "removed prefix: layers:" << std::endl << tools::layers_to_string_mojo(layers) << std::endl;
 					}
 					else if (remove_postfix) {
-						std::cout << "postfix:" << std::endl << tools::layers_to_string_mojo(tools::linear_to_layers(postfix)) << std::endl;
-						std::cout << "layers:" << std::endl << tools::layers_to_string_mojo(tools::linear_to_layers(nw)) << std::endl;
-						const auto layers = tools::linear_to_layers(tools::remove_postfix(nw, postfix));
-						std::cout << "removed postfix: layers:" << std::endl << tools::layers_to_string_mojo(layers) << std::endl;
+
+						const auto postfix_layers = tools::linear_to_layers(postfix);
+						sh::tools::write_latex(postfix_layers, N, "solution_postfix.tex");
+						const auto solution_full = tools::linear_to_layers(nw);
+						sh::tools::write_latex(solution_full, N, "solution_full.tex");
+						const auto solution = tools::linear_to_layers(tools::remove_postfix(nw, postfix));
+						sh::tools::write_latex(solution, N, "solution.tex");
+
+						std::cout << "removed postfix: solution:" << std::endl << tools::layers_to_string_mojo(solution) << std::endl;
 					}
 					else {
-						std::cout << "layers:" << std::endl << tools::layers_to_string_mojo(tools::linear_to_layers(nw)) << std::endl;
+						const auto layers = tools::linear_to_layers(nw);
+						sh::tools::write_latex(layers, N, "solution.tex");
+						std::cout << "layers:" << std::endl << tools::layers_to_string_mojo(layers) << std::endl;
 					}
 				}
 				else { // print linear list of ce's
@@ -614,7 +616,7 @@ namespace sh {
 				}
 				Pair_t p = Pair_t(0, 0);
 
-				if (state::postfix.size() == 0) // Empty postfix: find a pattern that fixes an arbitrary inversion in the first failed output
+				if (state::postfix.empty()) // Empty postfix: find a pattern that fixes an arbitrary inversion in the first failed output
 				{
 					bool found_useful_ce = false;
 					do {
@@ -635,6 +637,7 @@ namespace sh {
 				}
 				else // In case of postfix: just append a random initial pair to the core network, cannot directly determine good candidate from failed output pattern.
 				{
+					//std::cout << "Postfix is not empty" << std::endl;
 					p = RANDELEM(state::alphabet);
 				}
 
@@ -653,6 +656,8 @@ namespace sh {
 
 			for (;;) // Program never ends, keep trying to improve, we may restart in the outer loop however.
 			{
+				//std::cout << "X";
+
 				if (state::Verbosity > 2)
 				{
 					itercount++;
@@ -672,8 +677,9 @@ namespace sh {
 						iter_next_report += (1 + iter_next_report / 10); // Report about each 10% increase of iteration count, avoid all too frequent output
 					}
 				}
+
 				/* Determine number of mutations to use in this iteration */
-				u32 nmods = 1;
+				int nmods = 1;
 
 				if (state::MaxMutations > 1)
 				{
@@ -683,16 +689,21 @@ namespace sh {
 				/* Create a copy of the accepted set of pairs */
 				state::newpairs = state::pairs;
 
-				/* Apply the mutations */
-				u32 modcount = 0;
-				while (modcount < nmods)
+
+				// Apply the mutations
+				int mod_count = 0;
+				while (mod_count < nmods)
 				{
-					u32 r = attemptMutation(state::newpairs);
+					const int r = attemptMutation(state::newpairs);
+					//std::cout << "r = " << r << "; mod_count = " << mod_count << "; nmods = " << nmods << std::endl;
 					if (r != 0)
 					{
-						modcount++;
+						//std::cout << "Inc mod_count" << std::endl;
+						mod_count++;
 					}
 				}
+
+				//std::cout << "Y";
 
 				/* Create a symmetric expansion of the modified pairs (or just a copy if non-symmetric network) */
 				if (state::use_symmetry)
@@ -703,6 +714,9 @@ namespace sh {
 				{
 					state::se = state::newpairs;
 				}
+
+				//std::cout << "Z";
+
 
 				appendNetwork(state::se, state::postfix);
 
@@ -774,15 +788,72 @@ namespace sh {
 	}
 }
 
+using namespace sh;
+
+void latex_experiments() {
+	if (false) {
+		const int k = 8;
+		const int channels = 32;
+
+		const auto& swap_network = get_sort_network(channels);
+		const std::string latex_name1 = "sn_" + std::to_string(channels) + ".tex";
+		sh::tools::write_latex(swap_network, channels, latex_name1);
+
+		const auto unrelated_groups = sh::tools::get_unrelated_groups(k, channels);
+		const auto swap_network2 = sh::tools::annotate_unnecessary(unrelated_groups, sh::tools::convert_to_ece(swap_network));
+		const std::string latex_name2 = "sn_" + std::to_string(k) + "top" + std::to_string(channels) + ".tex";
+		sh::tools::write_latex(swap_network2, channels, latex_name2);
+
+		const auto linear = sh::tools::layers_to_linear_only_colour(swap_network2, "black");
+		const auto swap_network3 = sh::tools::linear_to_layers(linear);
+		const std::string latex_name3 = "sn_" + std::to_string(k) + "top" + std::to_string(channels) + "X.tex";
+		sh::tools::write_latex(swap_network3, channels, latex_name3);
+
+		std::cout << sh::tools::linear_to_string(linear);
+	}
+
+	if (false) {
+		const int channels = 64;
+
+		const auto& swap_network = get_sort_network(channels);
+		const std::string latex_name1 = "sn_" + std::to_string(channels) + ".tex";
+		sh::tools::write_latex(swap_network, channels, latex_name1);
+
+		for (int k = 1; k < channels; ++k)
+		{
+			const auto unrelated_groups = sh::tools::get_unrelated_groups(k, channels);
+			const auto swap_network2 = sh::tools::annotate_unnecessary(unrelated_groups, sh::tools::convert_to_ece(swap_network));
+			const std::string latex_name2 = "sn_" + std::to_string(k) + "top" + std::to_string(channels) + ".tex";
+			sh::tools::write_latex(swap_network2, channels, latex_name2);
+
+			const auto linear = sh::tools::layers_to_linear_only_colour(swap_network2, "black");
+			const auto swap_network3 = sh::tools::linear_to_layers(linear);
+			const std::string latex_name3 = "sn_" + std::to_string(k) + "top" + std::to_string(channels) + "X.tex";
+			sh::tools::write_latex(swap_network3, channels, latex_name3);
+		}
+	}
+
+	if (true) {
+		const int channels = 64;
+
+		const auto& swap_network = get_sort_network(channels);
+		const std::string latex_name1 = "sn_" + std::to_string(channels) + ".tex";
+		sh::tools::write_latex(swap_network, channels, latex_name1);
+	}
+}
+
 /**
  * SorterHunter main routine
  */
 
-using namespace sh;
-
-
 int main(int argc, char* argv[])
 {
+
+	// experiments with writing latex networks
+	if (false) {
+		latex_experiments();
+	}
+
 	// Handle validity of command line options - extremely simple
 	if (argc != 2)
 	{
